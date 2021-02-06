@@ -1,3 +1,5 @@
+library(ggplot2)
+
 dat <- read.csv("c:/Users/brus003/OneDrive - Wageningen University & Research/SISIndia/AP_SHC_c1_processed_modelling_v201911.csv")
 mandals <- sort(unique(dat$block))
 Zn_crit <- 0.9
@@ -47,6 +49,13 @@ df <- data.frame(mandal=mandals, lambda = round(lambda,2),
                  woc.mbl = nreq.woc.mbl)
 write.csv(df,file="RequiredSampleSizes_Mean_mandals.csv",row.names=FALSE)
 
+nreq_means <- read.csv(file="RequiredSampleSizes_Mean_mandals.csv",header=TRUE)
+dn <- (nreq_means[,c(4,5,6,7,8,9)] - nlegacy)*-1
+
+pdf(file="SampleSurplusMandals_Mean.pdf",width=6,height=4)
+hist(dn$alc.mbl,main="Mean of ln(Zn)",xlab="Sample surplus",breaks=seq(from=-750,to=3000,by=250))
+dev.off()
+
 # Required sample sizes for estimating areal fraction with Zn deficiency
 
 library(binomSamSize)
@@ -88,5 +97,11 @@ df <- data.frame(mandal=mandals, f = round(f,3),
                  woc.mbl = nreq.woc.mbl)
 write.csv(df,file="RequiredSampleSizes_ArealFraction_mandals.csv",row.names=FALSE)
 
+nreq_fractions <- read.csv(file="RequiredSampleSizes_ArealFraction_mandals.csv",header=TRUE)
+dn <- (nreq_fractions[,c(4,5,6,7,8,9)] - nlegacy)*-1
+
+pdf(file="SampleSurplusMandals_ArealFraction.pdf",width=6,height=4)
+hist(dn$alc.mbl,main="Areal fraction with Zn-deficiency",xlab="Sample surplus",,breaks=seq(from=-250,to=3000,by=250))
+dev.off()
 
 

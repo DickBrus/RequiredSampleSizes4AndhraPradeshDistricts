@@ -58,25 +58,88 @@ for (i in 1:length(districts)) {
 # Required sample sizes for estimating the mean of ln(Zn)
 
 
-Given a maximum width $w_{\mathrm{max}}$ of a $100(1-\alpha)$\% confidence interval of the poulation mean, in the frequentist approach the required sample size can be computed with
+Given a maximum width $w_{\mathrm{max}}$ of a $100(1-\alpha)$\% confidence interval of the population mean, in the frequentist approach the required sample size can be computed with
 
 $$
-n = \left(u_{(1-\alpha/2)}\frac{\tilde{\sigma}}{w_{\mathrm{max}}/2}\right)^2
+n = \left(u_{(1-\alpha/2)}\frac{\sigma_0}{w_{\mathrm{max}}/2}\right)^2
 $$
-The sample variance as computed with the cycle 1 SHC data of  2015-2017 (see output above) is used for $\tilde{\sigma}^2$.
+The sample variance as computed with the cycle 1 SHC data of  2015-2017 (see output above) is used for $\sigma_0^2$.
 
 As we are uncertain about the population standard deviation $\sigma$, in the fully Bayesian and mixed Bayesian-likelihood approach a prior distribution is assigned to this parameter. It is convenient to assign a gamma distribution as a prior distribution to the reciprocal of the population variance, referred to as the precision parameter $\lambda = 1/\sigma^2$. More precisely, a prior *bivariate* normal-gamma distribution is assigned to the population mean and the precision parameter.  With this prior distribution, the *posterior* distribution of the population mean is fully defined, i.e. both the type of distribution and its parameters are known. We say that the prior distribution is *conjugate* with the normal distribution.
 
 A prior gamma distribution is assigned to the reciprocal of the population variance $\lambda = 1/\sigma^2$. This gamma distribution has two parameters $a$ and $b$. The mean of a gamma distribution equals $a/b$, the standard deviation  equals $\sqrt{a/b^2}$. The mean of the gamma distribution was set equal to the reciprocal of the legacy sample variance of ln(Zn), $a/b=1/\sigma^2$ (Table \ref{tab:summarypriordata}). A second equation with $a$ and $b$ is needed to derive parameters $a$ and $b$. In this second equation the coefficient of variation of the gamma distribution, $cv(\lambda)$, is set equal to a user-specified value. Solving the two equations with two unknowns gives $a=1/\{cv(\lambda)\}^2$ and $b=a\;\sigma^2$. Required sample sizes are computed for a coefficient of variation of 0.25 of the gamma distributions for the precision parameter.
 
+The plot below shows the gamma priors for the precision parameter of the districts Chittoor and Prakasam, for a coeffcient of variation of 0.25.
+
+```{r twopriors, echo=FALSE, fig.cap="Prior gamma distribution for precision parameter, for Chittoor (black line) and Prakasam (red line)", out.width='50%', fig.align='center'}
+library(ggplot2)
+lambda <-seq(from=0.01,to=5,by=0.01)
+cv <- 0.25
+a <- 1/cv^2
+b <- a/(1/sigma2[2])
+dChittoor <- dgamma(lambda,a,b)
+
+b <- a/(1/sigma2[9])
+dPrakasam <- dgamma(lambda,a,b)
+df <- data.frame(lambda,dChittoor,dPrakasam)
+#pdf(file="GammaPriors.pdf",width=6,height=4)
+ggplot(df)+
+  geom_line(aes(x=lambda,y=dChittoor))+
+  geom_line(aes(x=lambda,y=dPrakasam),colour="red")+
+  scale_y_continuous(name="Density")+
+  xlab(expression(lambda))
+#dev.off()
+```
+
+Random values are drawn from the bivariate normal-gamma distribution for Chittoor, and a t distribution is plotted in the frequency diagram
+
+```{r}
+#Prior point estimate of variance and mean for district Chittoor
+sigma20 <- sigma2[2]
+mu0 <- mu[2]
+#Prior sample size
+n0 <- nlegacy[2]/1000
+
+#compute parameters of gamma distribution for precision parameter
+a <- 1/cv^2
+b <- a/(1/sigma20)
+
+#Draw random numbers from normal inverse-gamma distribution
+rnormgamma <- function(n, mu0, n0, alpha, beta) {
+  if (length(n) > 1) 
+    n <- length(n)
+    lambda <- rgamma(n, alpha, beta)
+    x <- rnorm(n, mu0, sqrt(1/(n0*lambda)))
+    data.frame(lambda = lambda, x = x)
+}
+
+draws <- rnormgamma(10000,mu0=mu0,n0=n0,alpha=a,beta=b)
+hist(draws$x)
+
+#compute densities of shifted scaled t-distribution with 2a degrees of freedom: sqrt(a*n0/b)*(x-mu0) ~ t
+library(metRology)
+scale <- sqrt(a*n0/b)
+df <- 2*a
+x <- seq(from=-0.8,to=0.6,by=0.01)
+d.tscaled <- dt.scaled(x,df=df,sd=1/scale,mean=mu0)
+dat <- data.frame(x=x,den=d.tscaled)
+
+
+pdf(file="tdistribution_Chittoor.pdf",width=6,height=4)
+hist(draws$x,freq=FALSE,main="",xlab="z")
+lines(x=x,y=d.tscaled)
+dev.off()
+```
 
 ```{r}
 library(SampleSizeMeans)
 wmax <- 0.2 #maximum width (=length) of confidence interval
 conflevel <- 0.95
-worstlevel <- 0.80
+worstlevel <- 0.5
 lambda <- 1/sigma2 #prior estimate of precision parameter
 cv <- 0.25 #coefficient of variation of gamma distribution for lambda
+#cv <- 0.0001 #coefficient of variation of gamma distribution for lambda
+#cv <- 1 #coefficient of variation of gamma distribution for lambda
 nreq.freq <- nreq.alc.bayes <- nreq.alc.mbl <- nreq.acc.bayes <- nreq.acc.mbl <- nreq.woc.bayes <- nreq.woc.mbl <-  numeric(length=length(districts))
 for (i in 1:length(districts)) {
   a <- 1/cv^2
@@ -99,39 +162,146 @@ for (i in 1:length(districts)) {
                   woc.mbl = nreq.woc.mbl))
 ```
 
+Compute effect of the worst level on the fully Bayesian and mixed Bayesian-likelihood required sample size using WOC as a criterion.
+
+```{r}
+worstlevels <- seq(from=0.5,to=0.95,by=0.025)
+a <- 1/cv^2
+b <- a/lambda[3]
+nreq.woc.bayes <- nreq.woc.mbl <- numeric(length=length(worstlevels))
+for (i in 1:length(worstlevels)) {
+    nreq.woc.bayes[i] <- mu.modwoc(len=wmax, alpha=a, beta=b, n0=0, level=conflevel, worst.level=worstlevels[i])
+    nreq.woc.mbl[i] <- mu.mblmodwoc(len=wmax, alpha=a, beta=b, level=conflevel, worst.level=worstlevels[i])
+}
+df <- data.frame(worst=worstlevels,bayes=nreq.woc.bayes,mbl=nreq.woc.mbl)
+pdf(file="EffectWorstLevel_EGodavari.pdf",width=6,height=4)
+library(ggplot2)
+ggplot(df)+
+  geom_point(aes(x=worst,y=bayes))+
+  geom_point(aes(x=worst,y=mbl),colour="red")+
+  scale_y_continuous(name="Required sample size")+
+  scale_x_continuous(name="Worst level")
+dev.off()
+```
+
+Compute effect of coefficient of variation of gamma distribution for precision parameter on fully Bayesian and mixed Bayesian-likelihood required sample size using ALC as a criterion.
+
+```{r}
+cvs <- seq(from=0.05,to=0.5,by=0.025)
+nreq.alc.bayes <- nreq.alc.mbl <- numeric(length=length(cvs))
+for (i in 1:length(cvs)) {
+  a <- 1/cvs[i]^2
+  b <- a/lambda[3]
+  a <- 94
+  b <- 68
+  nreq.alc.bayes[i] <- mu.alc(len=wmax, alpha=a, beta=b, n0=0, level=conflevel)
+  nreq.alc.mbl[i] <- mu.mblalc(len=wmax, alpha=a, beta=b, level=conflevel)
+}
+
+df <- data.frame(cv=cvs,bayes=nreq.alc.bayes,mbl=nreq.alc.mbl)
+pdf(file="EffectCoefficientofVariation_EGodavari.pdf",width=6,height=4)
+ggplot(df)+
+  geom_point(aes(x=cv,y=bayes))+
+  geom_point(aes(x=cv,y=mbl),colour="red")+
+  scale_y_continuous(name="Required sample size")+
+  scale_x_continuous(name="Coefficient of variation")
+dev.off()
+```
+
+
 # Required sample sizes for estimating the areal fraction with Zn deficiency 
 
 Given a maximum width $w_{\mathrm{max}}$ of a $100(1-\alpha)$\% confidence interval of the areal fraction, in the frequentist approach the required sample size can be computed with
 
 $$
-n  = \left(u_{(1-\alpha/2)}\frac{\sqrt{\tilde{\pi} (1-\tilde{\pi})}}{w_{\mathrm{max}}/2}\right)^2+1
+n  = \left(u_{(1-\alpha/2)}\frac{\sqrt{\pi_0 (1-\pi_0)}}{w_{\mathrm{max}}/2}\right)^2+1
 $$
 
-In the fully Bayesian and mixed Bayesian-likelihood approach a prior beta distribution is assigned to the design-parameter $\tilde{\pi}$. The beta distribution has two parameters $\alpha$ and $\beta$ which correspond to the number of "successes" (1) and "failures" (0) in the problem context. The larger these numbers, the more the prior information, and the more sharply defined the probability distribution. By setting the mode of the prior beta distribution to the prior estimate of the areal fraction $\tilde{\pi}$, the parameters of the beta distribution can be computed by 
+In the fully Bayesian and mixed Bayesian-likelihood approach a prior beta distribution is assigned to the design-parameter $\pi_0$. The beta distribution has two parameters $\alpha$ and $\beta$ which correspond to the number of "successes" (1) and "failures" (0) in the problem context. The larger these numbers, the more the prior information, and the more sharply defined the probability distribution. By setting the mode of the prior beta distribution to the prior estimate of the areal fraction $\pi_0$, the parameters of the beta distribution can be computed by 
 $$
 \begin{aligned}
-\alpha &= n_0 \tilde{\pi}+1\\
-\beta &= n_0 ( 1- \tilde{\pi})+1 \;,
+\alpha &= n_0 \pi_0+1\\
+\beta &= n_0 ( 1- \pi_0)+1 \;,
 \end{aligned}
 $$
 with $n_0$ the prior sample size.
+
+```{r twopriors, echo=FALSE, fig.cap="Prior beta distribution for areal of fraction with Zn-deficiency, for West Godavari (black line) and Nellore (red line)", out.width='50%', fig.align='center'}
+library(ggplot2)
+pi <-seq(from=0.01,to=0.99,by=0.01)
+id <- which.min(f)
+fmin <- f[id]
+nprior <- nlegacy[id]/1000
+a <- nprior*fmin+1
+b <- nprior*(1-fmin)+1
+dbeta.WGodavari <- dbeta(pi,a,b)
+
+id <- which.max(f)
+fmax <- f[id]
+nprior <- nlegacy[id]/1000
+a <- nprior*fmax+1
+b <- nprior*(1-fmax)+1
+dbeta.Nellore <- dbeta(pi,a,b)
+
+df <- data.frame(pi,dbeta.WGodavari,dbeta.Nellore)
+#pdf(file="BetaPriors.pdf",width=6,height=4)
+ggplot(df)+
+  geom_line(aes(x=pi,y=dbeta.WGodavari))+
+  geom_line(aes(x=pi,y=dbeta.Nellore),colour="red")+
+  scale_y_continuous(name="Density")+
+  xlab(expression(pi))
+#dev.off()
+```
+
+Plot betabinomial distribution for West Godavari.
+
+```{r}
+library(extraDistr)
+
+n0 <- nlegacy[13]/1000 #prior sample size
+pi0 <- f[13] #prior binomial proportion parameter: West Godavari
+
+#compute parameters of beta distribution for pi
+a <- n0*pi0+1
+b <- n0*(1-pi0)+1
+
+#compute densities of betabinomial distribution
+n <- 100
+x <- 0:n
+betabin <- dbbinom(x, size=n,alpha=a, beta=b)
+
+#For comparison compute binomial distribution with pi equal to mean of beta distribution
+meanbeta <- a/(a+b)
+bin <- dbinom(x, size=n, prob=meanbeta)
+
+library(reshape2)
+df <- data.frame(bin,betabin)
+df <- melt(df)
+df$z <- rep(seq(from=0,to=n,by=1),2)
+names(df)[c(1,2)] <- c("Distribution","Density")
+pdf(file="betabinomial_WGodavari.pdf",width=6,height=4)
+ggplot(df, aes(x=z, y=Density, fill=Distribution))+
+  geom_bar(stat="identity", position="dodge")
+dev.off()
+```
 
 
 ```{r binomSize.bayes, echo=FALSE}
 library(binomSamSize)
 library(SampleSizeBinomial)  
-nreq.wald <-  nreq.alc.bayes <- nreq.alc.mbl <- nreq.acc.bayes <- nreq.acc.mbl <- nreq.woc.bayes <- nreq.woc.mbl <-  numeric(length=length(districts))
+nreq.wald <-  nreq.midp <- nreq.alc.bayes <- nreq.alc.mbl <- nreq.acc.bayes <- nreq.acc.mbl <- nreq.woc.bayes <- nreq.woc.mbl <-  numeric(length=length(districts))
 wmax <- 0.1
 conflevel <- 0.95
 alpha <- 1-conflevel
 worstlevel <- 0.80
 n0 <- nlegacy/1000 #prior sample size
-#n0 <- nlegacy #prior sample size
+#n0 <- nlegacy
 #n0 <- rep(0,length(districts))
 for (i in 1:length(districts)) {
   a <- n0[i]*f[i]+1
   b <- n0[i]*(1-f[i])+1
   meanbeta <- a/(a+b)
+  nreq.midp[i] <- binomSamSize::ciss.midp(p0=f[i],d=wmax/2,alpha=1-conflevel)
 #  nreq.wald[i] <- binomSamSize::ciss.wald(p0=f[i],d=wmax/2,alpha=1-conflevel)
   nreq.wald[i] <- ceiling((qnorm(1-alpha/2)*sqrt(f[i]*(1-f[i]))/(wmax/2))^2+1)
   out <- prop.alc(len=wmax,alpha=a,beta=b,level=conflevel,exact=TRUE)
@@ -149,6 +319,7 @@ for (i in 1:length(districts)) {
 }
 (df <- data.frame(district=districts, f = round(f,3),
                   wald = nreq.wald,
+                  midp = nreq.midp,
                   alc = nreq.alc.bayes, 
                   alc.mbl = nreq.alc.mbl, 
                   acc = nreq.acc.bayes,
@@ -157,6 +328,46 @@ for (i in 1:length(districts)) {
                   woc.mbl = nreq.woc.mbl))
 ```
 
+Compute effect of $n_0$ for selected district (Chittoor, East Godavari, Nellore)
+
+```{r}
+n0s <- seq(from=0,to=100,by=1) 
+nreq.alc.bayes <- nreq.alc.mbl <- numeric(length=length(n0s))
+for (i in 1:length(n0s)) {
+  a <- n0s[i]*f[2]+1
+  b <- n0s[i]*(1-f[2])+1
+  a <- 21
+  b <- 35
+  out <- prop.alc(len=wmax,alpha=a,beta=b,level=conflevel,exact=TRUE)
+  nreq.alc.bayes[i] <- out$n
+  out <- prop.mblalc(len=wmax,alpha=a,beta=b,level=conflevel,exact=TRUE)
+  nreq.alc.mbl[i] <- out$n
+}
+df <- data.frame(n0s=n0s,bayes=nreq.alc.bayes,mbl=nreq.alc.mbl)
+#pdf(file="EffectPriorSamplesize_EastGodavari.pdf",width=6,height=4)
+#pdf(file="EffectPriorSamplesize_Nellore.pdf",width=6,height=4)
+#pdf(file="EffectPriorSamplesize_Chittoor.pdf",width=6,height=4)
+ggplot(df)+
+  geom_point(aes(x=n0s,y=bayes),size=1)+
+  geom_point(aes(x=n0s,y=mbl),colour="red",size=1)+
+  scale_y_continuous(name="Required sample size",limits=c(50,400))+
+  scale_x_continuous(name="Prior sample size")+
+#  ggtitle("East Godavari") +
+  ggtitle("Nellore") +
+#  ggtitle("Chittoor") +
+  theme(plot.title = element_text(hjust=0.5))
+#dev.off()
+```
+Finally some code for computing the hyperparameters of the beta and gamma distribution from quantiles of the design parameter. R scripts that are sourced can be downloaded from internet.
+
+```{r}
+source(file="beta.parms.from.quantiles.R")
+#East Godavari: pi_0 = 0.325
+beta.parms.from.quantiles(c(0.25,0.5))
+#East Godavari: sigma2_0 = 0.7
+source(file="gamma.parms.from.quantiles.R")
+gamma.parms.from.quantiles(c(1/0.6,1/0.9))
+```
 
 # References 
 
